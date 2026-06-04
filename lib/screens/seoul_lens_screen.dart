@@ -1,8 +1,26 @@
+﻿import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/app_bottom_nav.dart';
+
+const _geminiApiKey = 'AIzaSyA40dtNWhmZ65pG0GM98IS8pGeG7gcLSLs';
+
+class _PlaceResult {
+  final String name;
+  final String address;
+  final String description;
+  const _PlaceResult({
+    required this.name,
+    required this.address,
+    required this.description,
+  });
+}
 
 class SeoulLensScreen extends StatefulWidget {
   const SeoulLensScreen({super.key});
@@ -17,6 +35,11 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
   bool _isPlaying = false;
   double _playProgress = 0.32;
   bool _sheetExpanded = true;
+  final _picker = ImagePicker();
+  XFile? _pickedImage;
+  bool _isAnalyzing = false;
+  _PlaceResult? _placeResult;
+  String? _analyzeError;
 
   @override
   void initState() {
@@ -25,6 +48,263 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showMediaPicker());
+  }
+
+  Future<void> _showMediaPicker() async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: kCardBorder,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              Text('Seoul Lens',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16, fontWeight: FontWeight.w800, color: kInk)),
+              const SizedBox(height: 4),
+              Text('Choose a photo source',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, color: kSubtext)),
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(
+                  child: _SourceButton(
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Camera',
+                    onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.camera); },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _SourceButton(
+                    icon: Icons.photo_library_rounded,
+                    label: 'Gallery',
+                    onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.gallery); },
+                  ),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      // 카메라는 명시적 권한 요청 필요
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('카메라 권한이 필요합니다.',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13)),
+              action: const SnackBarAction(label: '설정', onPressed: openAppSettings),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    // 갤러리는 Android 시스템 포토피커가 권한을 자체 처리
+    try {
+      final file =
+          await _picker.pickImage(source: source, imageQuality: 85);
+      if (file != null && mounted) {
+        setState(() {
+          _pickedImage = file;
+          _placeResult = null;
+          _analyzeError = null;
+          _sheetExpanded = true;
+        });
+        await _analyzeWithGemini(file);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('이미지를 불러올 수 없습니다.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 13)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _analyzeWithGemini(XFile imageFile) async {
+    setState(() {
+      _isAnalyzing = true;
+      _analyzeError = null;
+    });
+
+    try {
+      final model = GenerativeModel(
+        model: 'gemini-1.5-flash',
+        apiKey: _geminiApiKey,
+      );
+
+      final imageBytes = await File(imageFile.path).readAsBytes();
+      final imagePart = DataPart('image/jpeg', imageBytes);
+
+      const prompt = '''이 사진에 찍힌 장소가 어디인지 분석해줘.
+반드시 아래 JSON 형식으로만 답해줘. 다른 텍스트는 포함하지 마:
+{
+  "name": "장소명 (영어 또는 한국어)",
+  "address": "주소 또는 위치 설명",
+  "description": "이 장소에 대한 간단한 설명 (2-3문장, 한국어)"
+}''';
+
+      final response = await model.generateContent([
+        Content.multi([imagePart, TextPart(prompt)])
+      ]);
+
+      final text = response.text ?? '';
+      // JSON 블록 추출
+      final jsonStr = text
+          .replaceAll(RegExp(r'```json\s*'), '')
+          .replaceAll(RegExp(r'```\s*'), '')
+          .trim();
+
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (mounted) {
+        setState(() {
+          _placeResult = _PlaceResult(
+            name: data['name']?.toString() ?? 'Unknown Place',
+            address: data['address']?.toString() ?? '',
+            description: data['description']?.toString() ?? '',
+          );
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _analyzeError = '장소를 인식하지 못했습니다.\n다시 시도해 주세요.');
+      }
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
+    }
+  }
+
+  Widget _buildGeminiResult() {
+    if (_isAnalyzing) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: kMint),
+            SizedBox(height: 14),
+            Text('Analyzing with Gemini...'),
+          ],
+        ),
+      );
+    }
+    if (_analyzeError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 40),
+              const SizedBox(height: 12),
+              Text(_analyzeError!,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: kSubtext)),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _showMediaPicker,
+                icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                label: const Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kMint,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_placeResult != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_placeResult!.name,
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18, fontWeight: FontWeight.w800, color: kInk)),
+                  Text(_placeResult!.address,
+                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: kSubtext)),
+                ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: kMintLight, borderRadius: BorderRadius.circular(50)),
+                child: Row(children: [
+                  const Icon(Icons.auto_awesome_rounded, size: 12, color: kMint),
+                  const SizedBox(width: 4),
+                  Text('Gemini',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: kMint)),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: kCanvas,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kCardBorder),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('AI Analysis',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12, fontWeight: FontWeight.w700, color: kMint)),
+                const SizedBox(height: 8),
+                Text(_placeResult!.description,
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13, color: kInk, height: 1.55)),
+              ]),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _showMediaPicker,
+                icon: const Icon(Icons.camera_alt_rounded, size: 16, color: kMint),
+                label: Text('Scan Another Place',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w700, color: kMint, fontSize: 14)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: kMint, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const Center(child: CircularProgressIndicator(color: kMint));
   }
 
   @override
@@ -41,8 +321,16 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // Camera background — DDP-inspired gradient
-          Positioned.fill(child: _DDPBackground()),
+          // Camera background — DDP-inspired gradient or picked image
+          Positioned.fill(
+            child: _pickedImage != null
+                ? Image.file(
+                    File(_pickedImage!.path),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _DDPBackground(),
+                  )
+                : _DDPBackground(),
+          ),
           // Status bar
           SafeArea(
             child: Column(
@@ -57,10 +345,10 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withValues(alpha: 0.45),
                           borderRadius: BorderRadius.circular(50),
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.2)),
+                              color: Colors.white.withValues(alpha: 0.2)),
                         ),
                         child: Row(children: [
                           const Icon(Icons.camera_alt_rounded,
@@ -77,7 +365,7 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: kMint.withOpacity(0.85),
+                          color: kMint.withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(50),
                         ),
                         child: Row(children: [
@@ -118,7 +406,7 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('DDP Detected · 98% confidence',
@@ -144,12 +432,12 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                 curve: Curves.easeOut,
                 height: sheetH,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.88),
+                  color: Colors.white.withValues(alpha: 0.88),
                   borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(28)),
                   boxShadow: [
                     BoxShadow(
-                        color: kMint.withOpacity(0.08),
+                        color: kMint.withValues(alpha: 0.08),
                         blurRadius: 30,
                         offset: const Offset(0, -8)),
                   ],
@@ -167,12 +455,14 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                       ),
                     ),
                     Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Location info
+                      child: _pickedImage != null
+                          ? _buildGeminiResult()
+                          : SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                            // Location info (기본 DDP 더미)
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -216,7 +506,7 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                             ),
                             const SizedBox(height: 12),
                             // Info chips row
-                            Wrap(spacing: 8, runSpacing: 6, children: const [
+                            const Wrap(spacing: 8, runSpacing: 6, children: [
                               _InfoChip(
                                   Icons.access_time_rounded,
                                   '10:00 AM – 10:00 PM',
@@ -310,7 +600,7 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                                 border: Border.all(color: kCardBorder),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: kMint.withOpacity(0.06),
+                                      color: kMint.withValues(alpha: 0.06),
                                       blurRadius: 16,
                                       offset: const Offset(0, 4))
                                 ],
@@ -441,12 +731,12 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                                       fontSize: 15),
                                 ),
                               ),
+                                ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
                     ),
-                    AppBottomNav(currentIndex: 2, onTap: (_) {}),
+                    const AppBottomNav(currentIndex: 2),
                   ],
                 ),
               ),
@@ -491,7 +781,7 @@ class _DDPPainter extends CustomPainter {
     final h = size.height;
 
     // Night sky stars
-    final starPaint = Paint()..color = Colors.white.withOpacity(0.6);
+    final starPaint = Paint()..color = Colors.white.withValues(alpha: 0.6);
     final stars = [
       Offset(w * 0.12, h * 0.08),
       Offset(w * 0.28, h * 0.04),
@@ -525,7 +815,7 @@ class _DDPPainter extends CustomPainter {
 
     // Silver highlight on DDP curves
     final highlightPaint = Paint()
-      ..color = Colors.white.withOpacity(0.07)
+      ..color = Colors.white.withValues(alpha: 0.07)
       ..style = PaintingStyle.fill;
     final highlight = Path();
     highlight.moveTo(w * 0.1, h * 0.50);
@@ -538,7 +828,7 @@ class _DDPPainter extends CustomPainter {
 
     // Building windows / LED strips
     final ledPaint = Paint()
-      ..color = kMint.withOpacity(0.5)
+      ..color = kMint.withValues(alpha: 0.5)
       ..strokeWidth = 1;
     for (double i = 0; i < 6; i++) {
       canvas.drawLine(
@@ -550,7 +840,7 @@ class _DDPPainter extends CustomPainter {
 
     // Yellow accent lights
     final yellowLed = Paint()
-      ..color = kYellow.withOpacity(0.45)
+      ..color = kYellow.withValues(alpha: 0.45)
       ..strokeWidth = 1;
     for (double i = 0; i < 4; i++) {
       canvas.drawLine(
@@ -566,7 +856,7 @@ class _DDPPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          kMint.withOpacity(0.08),
+          kMint.withValues(alpha: 0.08),
           Colors.transparent,
         ],
       ).createShader(Rect.fromLTWH(0, h * 0.7, w, h * 0.3));
@@ -595,8 +885,8 @@ class _ScanFramePainter extends CustomPainter {
 
     // Corner brackets
     // Top-left
-    canvas.drawLine(Offset(0, corner), const Offset(0, 0), paint);
-    canvas.drawLine(const Offset(0, 0), Offset(corner, 0), paint);
+    canvas.drawLine(const Offset(0, corner), const Offset(0, 0), paint);
+    canvas.drawLine(const Offset(0, 0), const Offset(corner, 0), paint);
     // Top-right
     canvas.drawLine(Offset(w - corner, 0), Offset(w, 0), paint);
     canvas.drawLine(Offset(w, 0), Offset(w, corner), paint);
@@ -613,7 +903,7 @@ class _ScanFramePainter extends CustomPainter {
       ..shader = LinearGradient(
         colors: [
           Colors.transparent,
-          kMint.withOpacity(0.6),
+          kMint.withValues(alpha: 0.6),
           Colors.transparent,
         ],
       ).createShader(Rect.fromLTWH(0, scanY - 1, w, 3));
@@ -648,6 +938,46 @@ class _InfoChip extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
                 fontSize: 11, fontWeight: FontWeight.w500, color: kInk)),
       ]),
+    );
+  }
+}
+
+class _SourceButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SourceButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: kMintLight,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kMint.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: kMint),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: kInk),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

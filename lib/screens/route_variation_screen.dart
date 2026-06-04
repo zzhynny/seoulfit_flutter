@@ -1,11 +1,40 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/app_bottom_nav.dart';
 
+// 장소별 좌표 맵핑
+const _placeCoords = {
+  'Cafe Bora': (lat: 37.5546, lng: 126.9240),
+  'Vinyl & Plastic': (lat: 37.5567, lng: 126.9234),
+  'Sangsang Madang': (lat: 37.5551, lng: 126.9225),
+  'Blue Bottle Coffee': (lat: 37.5443, lng: 127.0557),
+  'Daelim Warehouse': (lat: 37.5448, lng: 127.0563),
+  'Changdeokgung Palace': (lat: 37.5794, lng: 126.9910),
+};
+
 class RouteVariationScreen extends StatelessWidget {
   const RouteVariationScreen({super.key});
+
+  static const _firstPlaceLat = 37.5546;
+  static const _firstPlaceLng = 126.9240;
+
+  static Future<void> openGoogleMapsStatic(
+      BuildContext context, double lat, double lng) async {
+    final url = Uri.parse('https://maps.google.com/?q=$lat,$lng');
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openGoogleMaps(BuildContext context,
+      {double? lat, double? lng}) async {
+    final destLat = lat ?? _firstPlaceLat;
+    final destLng = lng ?? _firstPlaceLng;
+    final url = Uri.parse(
+        'https://maps.google.com/?q=$destLat,$destLng');
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
 
   static const _items = [
     _RouteItem.place('Cafe Bora', 'Hongdae', '9:00 AM', 'Cafe', kMint),
@@ -110,9 +139,9 @@ class RouteVariationScreen extends StatelessWidget {
                         color: kMintLight,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: const [
+                        children: [
                           _StatItem('Total', '2 Days'),
                           _StatItem('Stops', '6'),
                           _StatItem('Walk', '~38 min'),
@@ -121,16 +150,16 @@ class RouteVariationScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // KakaoMap CTA
+                    // Google Maps CTA
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () {},
+                        onPressed: () => _openGoogleMaps(context),
                         icon: const Icon(Icons.navigation_rounded, size: 18),
-                        label: const Text('Open Full Route in KakaoMap'),
+                        label: const Text('Get Directions in Google Maps'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFE000),
-                          foregroundColor: Colors.black,
+                          backgroundColor: const Color(0xFF1A73E8),
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(50)),
@@ -166,7 +195,7 @@ class RouteVariationScreen extends StatelessWidget {
                 ),
               ),
             ),
-            AppBottomNav(currentIndex: 3, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 3),
           ],
         ),
       ),
@@ -189,7 +218,7 @@ class RouteVariationScreen extends StatelessWidget {
           Container(
             width: 28,
             height: 28,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
                 color: kMint, shape: BoxShape.circle),
             child: Center(
               child: Text('$stopNum',
@@ -212,21 +241,30 @@ class RouteVariationScreen extends StatelessWidget {
                       fontSize: 11, color: kSubtext)),
             ]),
           ),
-          GestureDetector(
-            onTap: () {},
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFE000),
-                borderRadius: BorderRadius.circular(20),
+          Builder(builder: (ctx) {
+            final coords = _placeCoords[item.name];
+            return GestureDetector(
+              onTap: () {
+                if (coords != null) {
+                  RouteVariationScreen.openGoogleMapsStatic(
+                      ctx, coords.lat, coords.lng);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A73E8),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Maps',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
               ),
-              child: Text('KakaoMap',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black)),
-            ),
-          ),
+            );
+          }),
         ]),
       );
     }).toList();
@@ -275,10 +313,10 @@ class _PlaceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: kCard,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: item.accentColor!.withOpacity(0.4), width: 1.5),
+        border: Border.all(color: item.accentColor!.withValues(alpha: 0.4), width: 1.5),
         boxShadow: [
           BoxShadow(
-              color: item.accentColor!.withOpacity(0.1),
+              color: item.accentColor!.withValues(alpha: 0.1),
               blurRadius: 12,
               offset: const Offset(0, 4))
         ],
@@ -291,7 +329,7 @@ class _PlaceCard extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: item.accentColor!.withOpacity(0.15),
+              color: item.accentColor!.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(Icons.place_rounded,
@@ -316,7 +354,7 @@ class _PlaceCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: item.accentColor!.withOpacity(0.12),
+                  color: item.accentColor!.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(item.tag!,

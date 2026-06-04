@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/mascot_widget.dart';
@@ -101,7 +102,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       title: 'Location Access',
                       subtitle: 'For real-time nearby recommendations',
                       value: _locationEnabled,
-                      onChanged: (v) => setState(() => _locationEnabled = v),
+                      onChanged: (v) async {
+                        if (v) {
+                          final status =
+                              await Permission.location.request();
+                          setState(() =>
+                              _locationEnabled = status.isGranted);
+                        } else {
+                          setState(() => _locationEnabled = false);
+                        }
+                      },
                     ),
                     const SizedBox(height: 8),
                     _PermissionTile(
@@ -109,7 +119,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       title: 'Camera',
                       subtitle: 'For Seoul Lens AR feature',
                       value: _cameraEnabled,
-                      onChanged: (v) => setState(() => _cameraEnabled = v),
+                      onChanged: (v) async {
+                        if (v) {
+                          final status =
+                              await Permission.camera.request();
+                          setState(() =>
+                              _cameraEnabled = status.isGranted);
+                        } else {
+                          setState(() => _cameraEnabled = false);
+                        }
+                      },
                     ),
                     const SizedBox(height: 28),
                     // CTA
@@ -187,7 +206,7 @@ class _PillButton extends StatelessWidget {
               : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 2),
             ),
@@ -298,7 +317,7 @@ class _PermissionTile extends StatelessWidget {
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeColor: kMint,
+            activeTrackColor: kMint,
           ),
         ],
       ),

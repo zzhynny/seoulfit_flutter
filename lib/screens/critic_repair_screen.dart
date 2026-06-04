@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
@@ -93,7 +93,7 @@ class CriticRepairScreen extends StatelessWidget {
                           border: Border.all(color: kCardBorder),
                           boxShadow: [
                             BoxShadow(
-                                color: kMint.withOpacity(0.06),
+                                color: kMint.withValues(alpha: 0.06),
                                 blurRadius: 20,
                                 offset: const Offset(0, 6))
                           ]),
@@ -118,7 +118,7 @@ class CriticRepairScreen extends StatelessWidget {
                         color: kYellowLight,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                            color: kWarningBorder.withOpacity(0.5),
+                            color: kWarningBorder.withValues(alpha: 0.5),
                             width: 1.5),
                       ),
                       child: Row(
@@ -209,7 +209,7 @@ class CriticRepairScreen extends StatelessWidget {
                 ),
               ),
             ),
-            AppBottomNav(currentIndex: 0, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 0),
           ],
         ),
       ),
@@ -284,7 +284,7 @@ class _RepairLogRow extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: entry.color.withOpacity(0.12),
+                color: entry.color.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(entry.icon, size: 14, color: entry.color),

@@ -12,7 +12,8 @@ class UserSelectionScreen extends StatefulWidget {
 }
 
 class _UserSelectionScreenState extends State<UserSelectionScreen> {
-  final List<bool> _selected = [true, true, false, true, true, false, true, true, false];
+  // Stores indices in the order they were selected
+  final List<int> _selectionOrder = [0, 1, 3, 4, 6, 7];
 
   static const _places = [
     _PlaceItem('Cafe Bora', 'Hongdae', 'Cafe', 'High Cafe-hopping match', true),
@@ -26,11 +27,25 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
     _PlaceItem('Gyeongui Line Forest Park', 'Mapo', 'Park', 'Nice walking route', false),
   ];
 
-  int get _selectedCount => _selected.where((v) => v).length;
+  int get _selectedCount => _selectionOrder.length;
+
+  void _toggle(int index) {
+    setState(() {
+      if (_selectionOrder.contains(index)) {
+        _selectionOrder.remove(index);
+      } else {
+        _selectionOrder.add(index);
+      }
+    });
+  }
+
+  int? _orderOf(int index) {
+    final pos = _selectionOrder.indexOf(index);
+    return pos >= 0 ? pos + 1 : null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    int orderNum = 0;
     return Scaffold(
       backgroundColor: kCanvas,
       body: SafeArea(
@@ -40,8 +55,7 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
             // Sticky header
             Container(
               color: kCard,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Row(
                 children: [
                   Expanded(
@@ -60,8 +74,7 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
                       color: kMint,
                       borderRadius: BorderRadius.circular(50),
@@ -84,15 +97,11 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
                 itemCount: _places.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (_, i) {
-                  if (_selected[i]) orderNum++;
-                  final num = _selected[i] ? orderNum : null;
                   return _SelectionCard(
                     place: _places[i],
-                    selected: _selected[i],
-                    orderNumber: num,
-                    onChanged: (v) {
-                      setState(() => _selected[i] = v);
-                    },
+                    selected: _selectionOrder.contains(i),
+                    orderNumber: _orderOf(i),
+                    onChanged: (_) => _toggle(i),
                   );
                 },
               ),
@@ -109,12 +118,10 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: _selectedCount >= 2
-                          ? () =>
-                              Navigator.pushNamed(context, '/route-variation')
+                          ? () => Navigator.pushNamed(context, '/route-variation')
                           : null,
                       icon: const Icon(Icons.route_rounded, size: 18),
-                      label:
-                          Text('Build My Route ($_selectedCount stops)'),
+                      label: Text('Build My Route ($_selectedCount stops)'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: kMint,
                         foregroundColor: Colors.white,
@@ -131,7 +138,7 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
                 ],
               ),
             ),
-            AppBottomNav(currentIndex: 1, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 1),
           ],
         ),
       ),
@@ -145,8 +152,7 @@ class _PlaceItem {
   final String tag;
   final String rationale;
   final bool isHighRelevance;
-  const _PlaceItem(
-      this.name, this.area, this.tag, this.rationale, this.isHighRelevance);
+  const _PlaceItem(this.name, this.area, this.tag, this.rationale, this.isHighRelevance);
 }
 
 class _SelectionCard extends StatelessWidget {
@@ -181,7 +187,7 @@ class _SelectionCard extends StatelessWidget {
           boxShadow: selected
               ? [
                   BoxShadow(
-                      color: kMint.withOpacity(0.1),
+                      color: kMint.withValues(alpha: 0.1),
                       blurRadius: 12,
                       offset: const Offset(0, 3))
                 ]
@@ -189,12 +195,11 @@ class _SelectionCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Checkbox / Order badge
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: orderNumber != null
                   ? Container(
-                      key: ValueKey(orderNumber),
+                      key: ValueKey('order_$orderNumber'),
                       width: 32,
                       height: 32,
                       decoration: const BoxDecoration(
@@ -234,8 +239,7 @@ class _SelectionCard extends StatelessWidget {
                               color: kInk)),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                           color: kMintLight,
                           borderRadius: BorderRadius.circular(20)),
@@ -251,10 +255,8 @@ class _SelectionCard extends StatelessWidget {
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 11, color: kSubtext)),
                   const SizedBox(height: 6),
-                  // Rationale badge
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: isWarning ? kYellowLight : kMintLight,
                       borderRadius: BorderRadius.circular(20),
@@ -265,9 +267,7 @@ class _SelectionCard extends StatelessWidget {
                             ? Icons.warning_amber_rounded
                             : Icons.check_circle_rounded,
                         size: 11,
-                        color: isWarning
-                            ? const Color(0xFFD97706)
-                            : kMint,
+                        color: isWarning ? const Color(0xFFD97706) : kMint,
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -275,9 +275,7 @@ class _SelectionCard extends StatelessWidget {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isWarning
-                              ? const Color(0xFFD97706)
-                              : kMint,
+                          color: isWarning ? const Color(0xFFD97706) : kMint,
                         ),
                       ),
                     ]),

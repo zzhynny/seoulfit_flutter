@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/app_bottom_nav.dart';
 import '../widgets/mascot_widget.dart';
+import '../utils/app_state.dart';
 
 class ConversationalIntakeScreen extends StatefulWidget {
   const ConversationalIntakeScreen({super.key});
@@ -17,7 +18,13 @@ class _ConversationalIntakeScreenState
     extends State<ConversationalIntakeScreen> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
-  bool _showNextButton = true;
+  final bool _showNextButton = true;
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.hasChatData = true;
+  }
 
   final List<_ChatMessage> _messages = const [
     _ChatMessage(
@@ -178,7 +185,7 @@ class _ConversationalIntakeScreenState
                 ],
               ),
             ),
-            AppBottomNav(currentIndex: 0, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 0),
           ],
         ),
       ),
@@ -234,7 +241,7 @@ class _ChatBubble extends StatelessWidget {
                   : Border.all(color: kCardBorder),
               boxShadow: [
                 BoxShadow(
-                  color: kMint.withOpacity(isUser ? 0.18 : 0.04),
+                  color: kMint.withValues(alpha: isUser ? 0.18 : 0.04),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -255,7 +262,7 @@ class _ChatBubble extends StatelessWidget {
           Container(
             width: 28,
             height: 28,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: kMintLight,
               shape: BoxShape.circle,
             ),

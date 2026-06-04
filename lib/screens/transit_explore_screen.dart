@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
@@ -13,6 +13,7 @@ class TransitExploreScreen extends StatefulWidget {
 
 class _TransitExploreScreenState extends State<TransitExploreScreen> {
   int _selectedTab = 0;
+
   static const _tabs = ['Cafes', 'Food', 'Photo', 'Shop'];
 
   static const _transitSteps = [
@@ -86,7 +87,7 @@ class _TransitExploreScreenState extends State<TransitExploreScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: kMint.withOpacity(0.2),
+                                color: kMint.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text('~25 min',
@@ -106,7 +107,7 @@ class _TransitExploreScreenState extends State<TransitExploreScreen> {
                           Text('💡 Tip: T-money card accepted on all lines',
                               style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
-                                  color: Colors.white.withOpacity(0.6))),
+                                  color: Colors.white.withValues(alpha: 0.6))),
                         ],
                       ),
                     ),
@@ -123,10 +124,10 @@ class _TransitExploreScreenState extends State<TransitExploreScreen> {
                               color: kInk)),
                     ]),
                     const SizedBox(height: 10),
-                    SingleChildScrollView(
+                    const SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
-                        children: const [
+                        children: [
                           _EventCard(
                             'K-POP Popup\nToday',
                             'SM Town Coex',
@@ -235,7 +236,7 @@ class _TransitExploreScreenState extends State<TransitExploreScreen> {
                 ),
               ),
             ),
-            AppBottomNav(currentIndex: 3, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 3),
           ],
         ),
       ),
@@ -283,7 +284,7 @@ class _TransitStepRow extends StatelessWidget {
             Container(
                 width: 2,
                 height: 22,
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 margin: const EdgeInsets.symmetric(vertical: 2)),
         ]),
         const SizedBox(width: 12),
@@ -299,7 +300,7 @@ class _TransitStepRow extends StatelessWidget {
               Text(step.detail,
                   style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
-                      color: Colors.white.withOpacity(0.65))),
+                      color: Colors.white.withValues(alpha: 0.65))),
             ]),
           ),
         ),
@@ -351,7 +352,7 @@ class _EventCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(meta,

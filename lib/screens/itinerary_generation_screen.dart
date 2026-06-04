@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
@@ -102,13 +102,13 @@ class _ItineraryGenerationScreenState extends State<ItineraryGenerationScreen>
                             ),
                             child: FractionallySizedBox(
                               widthFactor: _progress.value,
+                              alignment: Alignment.centerLeft,
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: kMint,
                                   borderRadius: BorderRadius.circular(50),
                                 ),
                               ),
-                              alignment: Alignment.centerLeft,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -135,17 +135,17 @@ class _ItineraryGenerationScreenState extends State<ItineraryGenerationScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _DayHeader(day: 'Day 1', date: 'Hongdae Area'),
+                    const _DayHeader(day: 'Day 1', date: 'Hongdae Area'),
                     ..._day1Places.map((p) => _SkeletonPlaceCard(place: p)),
                     const SizedBox(height: 12),
-                    _DayHeader(day: 'Day 2', date: 'Seongsu Area'),
+                    const _DayHeader(day: 'Day 2', date: 'Seongsu Area'),
                     ..._day2Places.map((p) => _SkeletonPlaceCard(place: p)),
                     const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-            AppBottomNav(currentIndex: 0, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 0),
           ],
         ),
       ),

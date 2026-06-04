@@ -14,10 +14,17 @@ import 'screens/user_selection_screen.dart';
 import 'screens/route_variation_screen.dart';
 import 'screens/transit_explore_screen.dart';
 import 'screens/seoul_lens_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/error_screen.dart';
+import 'screens/place_detail_screen.dart';
+import 'screens/save_complete_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  AuthRepository.initialize(appKey: 'eed5776a9133c010bca56513f4be3f7d');
+  AuthRepository.initialize(
+    appKey: 'eed5776a9133c010bca56513f4be3f7d',
+    baseUrl: 'http://localhost',
+  );
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -48,6 +55,10 @@ class SeoulFitApp extends StatelessWidget {
         '/route-variation': (ctx) => const RouteVariationScreen(),
         '/transit-explore': (ctx) => const TransitExploreScreen(),
         '/seoul-lens': (ctx) => const SeoulLensScreen(),
+        '/profile': (ctx) => const ProfileScreen(),
+        '/error': (ctx) => const ErrorScreen(),
+        '/place-detail': (ctx) => const PlaceDetailScreen(),
+        '/save-complete': (ctx) => const SaveCompleteScreen(),
       },
     );
   }

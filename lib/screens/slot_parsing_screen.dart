@@ -4,16 +4,39 @@ import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/app_bottom_nav.dart';
 
-class SlotParsingScreen extends StatelessWidget {
+class SlotParsingScreen extends StatefulWidget {
   const SlotParsingScreen({super.key});
 
-  static const _slots = [
-    _Slot(icon: Icons.person_rounded, label: 'User', value: 'jihyun / Age 23', isMint: true),
-    _Slot(icon: Icons.calendar_today_rounded, label: 'Duration', value: '2 Days', isMint: true),
-    _Slot(icon: Icons.location_on_rounded, label: 'Region', value: 'Hongdae, Seongsu', isMint: true),
-    _Slot(icon: Icons.attach_money_rounded, label: 'Budget', value: '\$300', isMint: false),
-    _Slot(icon: Icons.star_rounded, label: 'Purpose', value: 'Cafe · K-POP', isMint: false),
+  @override
+  State<SlotParsingScreen> createState() => _SlotParsingScreenState();
+}
+
+class _SlotParsingScreenState extends State<SlotParsingScreen> {
+  bool _isEditing = false;
+
+  static const _slotMeta = [
+    _SlotMeta(icon: Icons.person_rounded, label: 'User', isMint: true),
+    _SlotMeta(icon: Icons.calendar_today_rounded, label: 'Duration', isMint: true),
+    _SlotMeta(icon: Icons.location_on_rounded, label: 'Region', isMint: true),
+    _SlotMeta(icon: Icons.attach_money_rounded, label: 'Budget', isMint: false),
+    _SlotMeta(icon: Icons.star_rounded, label: 'Purpose', isMint: false),
   ];
+
+  late final List<TextEditingController> _controllers = [
+    TextEditingController(text: 'jihyun / Age 23'),
+    TextEditingController(text: '2 Days'),
+    TextEditingController(text: 'Hongdae, Seongsu'),
+    TextEditingController(text: '\$300'),
+    TextEditingController(text: 'Cafe · K-POP'),
+  ];
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,27 +53,32 @@ class SlotParsingScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 8),
-                    // Top badge
                     Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
-                          color: kMintLight,
+                          color: _isEditing
+                              ? kYellowLight
+                              : kMintLight,
                           borderRadius: BorderRadius.circular(50),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.auto_awesome_rounded,
-                                size: 13, color: kMint),
+                            Icon(
+                              _isEditing
+                                  ? Icons.edit_rounded
+                                  : Icons.auto_awesome_rounded,
+                              size: 13,
+                              color: _isEditing ? const Color(0xFFD97706) : kMint,
+                            ),
                             const SizedBox(width: 5),
                             Text(
-                              'AI Slot Parsing Complete',
+                              _isEditing ? 'Edit Mode' : 'AI Slot Parsing Complete',
                               style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: kMint),
+                                  color: _isEditing ? const Color(0xFFD97706) : kMint),
                             ),
                           ],
                         ),
@@ -58,7 +86,7 @@ class SlotParsingScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Collected\nInformation',
+                      _isEditing ? 'Edit\nInformation' : 'Collected\nInformation',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
@@ -68,68 +96,71 @@ class SlotParsingScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Parsed from your natural language input',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13, color: kSubtext),
+                      _isEditing
+                          ? 'Modify your travel preferences below'
+                          : 'Parsed from your natural language input',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: kSubtext),
                     ),
                     const SizedBox(height: 24),
-                    // Slot chips grid
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 2.0,
-                      ),
-                      itemCount: _slots.length,
-                      itemBuilder: (_, i) => _SlotCard(slot: _slots[i]),
-                    ),
+
+                    // Slot cards (view) or edit fields
+                    _isEditing
+                        ? _buildEditFields()
+                        : _buildSlotGrid(),
+
                     const SizedBox(height: 20),
-                    // Raw input quote
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: kCard,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: kCardBorder),
+
+                    // Raw input quote (only in view mode)
+                    if (!_isEditing) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: kCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: kCardBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              const Icon(Icons.format_quote_rounded, size: 16, color: kSubtext),
+                              const SizedBox(width: 6),
+                              Text('Original Input',
+                                  style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: kSubtext)),
+                            ]),
+                            const SizedBox(height: 8),
+                            Text(
+                              '"I want a 2-day trip to Hongdae & Seongsu, budget \$300, focusing on cafe-hopping and K-POP culture."',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  color: kInk,
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.5),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            const Icon(Icons.format_quote_rounded,
-                                size: 16, color: kSubtext),
-                            const SizedBox(width: 6),
-                            Text('Original Input',
-                                style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: kSubtext)),
-                          ]),
-                          const SizedBox(height: 8),
-                          Text(
-                            '"I want a 2-day trip to Hongdae & Seongsu, budget \$300, focusing on cafe-hopping and K-POP culture."',
-                            style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: kInk,
-                                fontStyle: FontStyle.italic,
-                                height: 1.5),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 28),
+                      const SizedBox(height: 28),
+                    ] else
+                      const SizedBox(height: 28),
+
                     // CTA
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () =>
-                            Navigator.pushNamed(context, '/generating'),
-                        icon: const Icon(Icons.rocket_launch_rounded, size: 18),
-                        label: const Text('Confirm & Generate'),
+                        onPressed: _isEditing
+                            ? () => setState(() => _isEditing = false)
+                            : () => Navigator.pushNamed(context, '/generating'),
+                        icon: Icon(
+                          _isEditing
+                              ? Icons.check_rounded
+                              : Icons.rocket_launch_rounded,
+                          size: 18,
+                        ),
+                        label: Text(_isEditing ? 'Save Changes' : 'Confirm & Generate'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: kMint,
                           foregroundColor: Colors.white,
@@ -145,12 +176,21 @@ class SlotParsingScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                     Center(
                       child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Edit preferences',
-                            style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: kSubtext,
-                                decoration: TextDecoration.underline)),
+                        onPressed: () {
+                          if (_isEditing) {
+                            // Cancel — revert to saved values
+                            setState(() => _isEditing = false);
+                          } else {
+                            setState(() => _isEditing = true);
+                          }
+                        },
+                        child: Text(
+                          _isEditing ? 'Cancel' : 'Edit preferences',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              color: kSubtext,
+                              decoration: TextDecoration.underline),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -158,53 +198,105 @@ class SlotParsingScreen extends StatelessWidget {
                 ),
               ),
             ),
-            AppBottomNav(currentIndex: 0, onTap: (_) {}),
+            const AppBottomNav(currentIndex: 0),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildSlotGrid() {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 2.0,
+      ),
+      itemCount: _slotMeta.length,
+      itemBuilder: (_, i) => _SlotCard(
+        meta: _slotMeta[i],
+        value: _controllers[i].text,
+      ),
+    );
+  }
+
+  Widget _buildEditFields() {
+    return Column(
+      children: List.generate(_slotMeta.length, (i) {
+        final meta = _slotMeta[i];
+        final iconColor = meta.isMint ? kMint : const Color(0xFFD97706);
+        final borderColor = meta.isMint ? kMint : kYellow;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: kCardBorder),
+          ),
+          child: TextField(
+            controller: _controllers[i],
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 14, fontWeight: FontWeight.w600, color: kInk),
+            decoration: InputDecoration(
+              prefixIcon: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Icon(meta.icon, size: 18, color: iconColor),
+              ),
+              prefixIconConstraints: const BoxConstraints(minWidth: 48),
+              labelText: meta.label,
+              labelStyle: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: iconColor),
+              floatingLabelStyle: GoogleFonts.plusJakartaSans(
+                  fontSize: 11, fontWeight: FontWeight.w700, color: borderColor),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
+            ),
+          ),
+        );
+      }),
+    );
+  }
 }
 
-class _Slot {
+class _SlotMeta {
   final IconData icon;
   final String label;
-  final String value;
   final bool isMint;
-  const _Slot({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.isMint,
-  });
+  const _SlotMeta({required this.icon, required this.label, required this.isMint});
 }
 
 class _SlotCard extends StatelessWidget {
-  final _Slot slot;
-  const _SlotCard({required this.slot});
+  final _SlotMeta meta;
+  final String value;
+  const _SlotCard({required this.meta, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final bg = slot.isMint ? kMintLight : kYellowLight;
-    final border = slot.isMint ? kMint : kYellow;
-    final iconColor = slot.isMint ? kMint : const Color(0xFFD97706);
+    final bg = meta.isMint ? kMintLight : kYellowLight;
+    final border = meta.isMint ? kMint : kYellow;
+    final iconColor = meta.isMint ? kMint : const Color(0xFFD97706);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border.withOpacity(0.6), width: 1.5),
+        border: Border.all(color: border.withValues(alpha: 0.6), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Row(children: [
-            Icon(slot.icon, size: 14, color: iconColor),
+            Icon(meta.icon, size: 14, color: iconColor),
             const SizedBox(width: 5),
             Text(
-              slot.label,
+              meta.label,
               style: GoogleFonts.plusJakartaSans(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -214,7 +306,7 @@ class _SlotCard extends StatelessWidget {
           ]),
           const SizedBox(height: 6),
           Text(
-            slot.value,
+            value,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               fontWeight: FontWeight.w700,

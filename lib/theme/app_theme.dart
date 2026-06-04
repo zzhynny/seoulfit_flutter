@@ -19,7 +19,7 @@ class AppTheme {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: kMint,
-          background: kCanvas,
+          surface: kCanvas,
         ),
         scaffoldBackgroundColor: kCanvas,
         textTheme: GoogleFonts.plusJakartaSansTextTheme().copyWith(

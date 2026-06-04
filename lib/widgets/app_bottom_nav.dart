@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_state.dart';
+import '../screens/empty_chat_screen.dart';
 
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
@@ -12,12 +14,39 @@ class AppBottomNav extends StatelessWidget {
   });
 
   static const _items = [
-    _NavItem(icon: Icons.home_rounded, label: 'Home'),
+    _NavItem(icon: Icons.chat_bubble_rounded, label: 'Chat'),
     _NavItem(icon: Icons.explore_rounded, label: 'Explore'),
     _NavItem(icon: Icons.camera_alt_rounded, label: 'Lens'),
     _NavItem(icon: Icons.directions_transit_rounded, label: 'Transit'),
     _NavItem(icon: Icons.person_rounded, label: 'Profile'),
   ];
+
+  static const _routes = [
+    '/chat',
+    '/itinerary-map',
+    '/seoul-lens',
+    '/transit-explore',
+    '/profile',
+  ];
+
+  void _handleTap(BuildContext context, int index) {
+    if (onTap != null) {
+      onTap!(index);
+      return;
+    }
+    if (index == currentIndex) return;
+    // Explore(1) / Transit(3): 채팅 데이터 없으면 빈 상태 화면
+    if ((index == 1 || index == 3) && !AppState.hasChatData) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EmptyChatScreen(navIndex: index),
+        ),
+      );
+      return;
+    }
+    Navigator.pushNamed(context, _routes[index]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +57,7 @@ class AppBottomNav extends StatelessWidget {
         border: const Border(top: BorderSide(color: kCardBorder, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: kMint.withOpacity(0.06),
+            color: kMint.withValues(alpha: 0.06),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -39,7 +68,7 @@ class AppBottomNav extends StatelessWidget {
         children: List.generate(_items.length, (i) {
           final selected = i == currentIndex;
           return GestureDetector(
-            onTap: () => onTap?.call(i),
+            onTap: () => _handleTap(context, i),
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
               width: 60,
@@ -51,7 +80,7 @@ class AppBottomNav extends StatelessWidget {
                     height: 30,
                     decoration: selected
                         ? BoxDecoration(
-                            color: kMint.withOpacity(0.12),
+                            color: kMint.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(20),
                           )
                         : null,

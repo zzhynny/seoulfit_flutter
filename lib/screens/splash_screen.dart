@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
-import '../widgets/mascot_widget.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,7 +18,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
     _fadeIn = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _ctrl.forward();
 
@@ -48,8 +48,13 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const MascotWidget(size: 180),
-                    const SizedBox(height: 32),
+                    Image.asset(
+                      'assets/images/seoulfit_mascot.png',
+                      width: 200,
+                      height: 200,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 24),
                     Text(
                       'SEOULFit',
                       style: GoogleFonts.plusJakartaSans(
@@ -70,7 +75,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                     const SizedBox(height: 48),
-                    _LoadingDots(),
+                    const _LoadingDots(),
                   ],
                 ),
               ),
@@ -81,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen>
                 'Powered by Gemini · Visit Seoul Open Data',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 11,
-                  color: kSubtext.withOpacity(0.6),
+                  color: kSubtext.withValues(alpha: 0.6),
                 ),
               ),
             ),
@@ -93,6 +98,8 @@ class _SplashScreenState extends State<SplashScreen>
 }
 
 class _LoadingDots extends StatefulWidget {
+  const _LoadingDots();
+
   @override
   State<_LoadingDots> createState() => _LoadingDotsState();
 }
@@ -104,7 +111,8 @@ class _LoadingDotsState extends State<_LoadingDots>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
       ..repeat();
   }
 
@@ -125,12 +133,13 @@ class _LoadingDotsState extends State<_LoadingDots>
             final delay = i / 3;
             final t = (_ctrl.value + delay) % 1.0;
             final scale = t < 0.5 ? 0.6 + t * 0.8 : 1.0 - (t - 0.5) * 0.8;
+            final s = scale.clamp(0.6, 1.0);
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: 8 * scale.clamp(0.6, 1.0),
-              height: 8 * scale.clamp(0.6, 1.0),
+              width: 8 * s,
+              height: 8 * s,
               decoration: BoxDecoration(
-                color: kMint.withOpacity(0.6 + 0.4 * scale.clamp(0.0, 1.0)),
+                color: kMint.withValues(alpha: 0.6 + 0.4 * s),
                 shape: BoxShape.circle,
               ),
             );
