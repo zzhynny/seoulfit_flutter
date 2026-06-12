@@ -1,26 +1,15 @@
-﻿import 'dart:convert';
-import 'dart:io';
+﻿import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_status_bar.dart';
 import '../widgets/app_bottom_nav.dart';
-
-const _geminiApiKey = 'AIzaSyA40dtNWhmZ65pG0GM98IS8pGeG7gcLSLs';
-
-class _PlaceResult {
-  final String name;
-  final String address;
-  final String description;
-  const _PlaceResult({
-    required this.name,
-    required this.address,
-    required this.description,
-  });
-}
+import '../services/lens_service.dart';
+import '../models/landmark_analysis.dart';
 
 class SeoulLensScreen extends StatefulWidget {
   const SeoulLensScreen({super.key});
@@ -32,13 +21,15 @@ class SeoulLensScreen extends StatefulWidget {
 class _SeoulLensScreenState extends State<SeoulLensScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _scanCtrl;
-  bool _isPlaying = false;
-  double _playProgress = 0.32;
   bool _sheetExpanded = true;
   final _picker = ImagePicker();
+  final _lens = LensService();
+  final _tts = FlutterTts();
+  bool _isSpeaking = false;
   XFile? _pickedImage;
+  Uint8List? _pickedBytes;
   bool _isAnalyzing = false;
-  _PlaceResult? _placeResult;
+  LandmarkAnalysis? _placeResult;
   String? _analyzeError;
 
   @override
@@ -48,7 +39,30 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _initTts();
     WidgetsBinding.instance.addPostFrameCallback((_) => _showMediaPicker());
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.9);
+    await _tts.setPitch(1.0);
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+  }
+
+  Future<void> _toggleTts(String text) async {
+    if (_isSpeaking) {
+      await _tts.stop();
+      setState(() => _isSpeaking = false);
+    } else {
+      setState(() => _isSpeaking = true);
+      await _tts.speak(text);
+    }
   }
 
   Future<void> _showMediaPicker() async {
@@ -123,13 +137,15 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
       final file =
           await _picker.pickImage(source: source, imageQuality: 85);
       if (file != null && mounted) {
+        final bytes = await file.readAsBytes();
         setState(() {
           _pickedImage = file;
+          _pickedBytes = bytes;
           _placeResult = null;
           _analyzeError = null;
           _sheetExpanded = true;
         });
-        await _analyzeWithGemini(file);
+        await _analyzeWithBackend(file, bytes);
       }
     } catch (e) {
       if (mounted) {
@@ -143,53 +159,30 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
     }
   }
 
-  Future<void> _analyzeWithGemini(XFile imageFile) async {
+  Future<void> _analyzeWithBackend(XFile imageFile, Uint8List bytes) async {
     setState(() {
       _isAnalyzing = true;
       _analyzeError = null;
     });
 
     try {
-      final model = GenerativeModel(
-        model: 'gemini-1.5-flash',
-        apiKey: _geminiApiKey,
+      final result = await _lens.analyze(
+        bytes,
+        imageFile.name.isNotEmpty ? imageFile.name : 'capture.jpg',
       );
-
-      final imageBytes = await File(imageFile.path).readAsBytes();
-      final imagePart = DataPart('image/jpeg', imageBytes);
-
-      const prompt = '''이 사진에 찍힌 장소가 어디인지 분석해줘.
-반드시 아래 JSON 형식으로만 답해줘. 다른 텍스트는 포함하지 마:
-{
-  "name": "장소명 (영어 또는 한국어)",
-  "address": "주소 또는 위치 설명",
-  "description": "이 장소에 대한 간단한 설명 (2-3문장, 한국어)"
-}''';
-
-      final response = await model.generateContent([
-        Content.multi([imagePart, TextPart(prompt)])
-      ]);
-
-      final text = response.text ?? '';
-      // JSON 블록 추출
-      final jsonStr = text
-          .replaceAll(RegExp(r'```json\s*'), '')
-          .replaceAll(RegExp(r'```\s*'), '')
-          .trim();
-
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
       if (mounted) {
-        setState(() {
-          _placeResult = _PlaceResult(
-            name: data['name']?.toString() ?? 'Unknown Place',
-            address: data['address']?.toString() ?? '',
-            description: data['description']?.toString() ?? '',
-          );
-        });
+        if (result.confidence == 0 &&
+            result.nameEnglish.toLowerCase() == 'unknown') {
+          setState(() => _analyzeError =
+              "Couldn't recognize this place.\nTry another photo.");
+        } else {
+          setState(() => _placeResult = result);
+        }
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _analyzeError = '장소를 인식하지 못했습니다.\n다시 시도해 주세요.');
+        setState(() => _analyzeError =
+            "Couldn't reach the analysis service.\nIs the backend running on :8000?");
       }
     } finally {
       if (mounted) setState(() => _isAnalyzing = false);
@@ -204,7 +197,7 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
           children: [
             CircularProgressIndicator(color: kMint),
             SizedBox(height: 14),
-            Text('Analyzing with Gemini...'),
+            Text('Analyzing landmark...'),
           ],
         ),
       );
@@ -239,6 +232,22 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
       );
     }
     if (_placeResult != null) {
+      final r = _placeResult!;
+      // Prefer the English-translated value, fall back to the Korean original.
+      String field(String key) {
+        final en = (r.publicInfoEn[key] ?? '').trim();
+        if (en.isNotEmpty) return en;
+        return (r.publicInfo[key] ?? '').trim();
+      }
+
+      final address = field('address');
+      final hours = field('hours');
+      final openDays = field('open_days');
+      final closedDays = field('closed_days');
+      final subway = field('subway');
+      final phone = field('phone');
+      final website = field('website');
+      final tags = field('tags');
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(
@@ -247,25 +256,95 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_placeResult!.name,
+                  Text(r.nameEnglish,
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 18, fontWeight: FontWeight.w800, color: kInk)),
-                  Text(_placeResult!.address,
-                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: kSubtext)),
+                  if (r.nameKorean.isNotEmpty)
+                    Text(r.nameKorean,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12, color: kSubtext)),
                 ]),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: kMintLight, borderRadius: BorderRadius.circular(50)),
+                decoration: BoxDecoration(
+                    color: r.dataVerified ? kMintLight : kYellowLight,
+                    borderRadius: BorderRadius.circular(50)),
                 child: Row(children: [
-                  const Icon(Icons.auto_awesome_rounded, size: 12, color: kMint),
+                  Icon(
+                      r.dataVerified
+                          ? Icons.verified_rounded
+                          : Icons.auto_awesome_rounded,
+                      size: 12,
+                      color: r.dataVerified ? kMint : const Color(0xFFD97706)),
                   const SizedBox(width: 4),
-                  Text('Gemini',
+                  Text(r.dataVerified ? 'Verified' : 'AI Guess',
                       style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11, fontWeight: FontWeight.w700, color: kMint)),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: r.dataVerified ? kMint : const Color(0xFFD97706))),
                 ]),
               ),
             ]),
+            Builder(builder: (_) {
+              final rows = <Widget>[];
+              void add(IconData icon, String label, String value,
+                  {VoidCallback? onTap}) {
+                if (value.isEmpty) return;
+                if (rows.isNotEmpty) {
+                  rows.add(const Divider(height: 1, color: kCardBorder));
+                }
+                rows.add(_DetailRow(
+                    icon: icon, label: label, value: value, onTap: onTap));
+              }
+
+              add(Icons.access_time_rounded, 'HOURS', hours);
+              add(Icons.event_available_rounded, 'OPEN', openDays);
+              add(Icons.event_busy_rounded, 'CLOSED', closedDays);
+              add(Icons.directions_subway_rounded, 'GETTING THERE', subway);
+              add(Icons.location_on_rounded, 'ADDRESS', address);
+              add(Icons.phone_rounded, 'PHONE', phone,
+                  onTap: () =>
+                      _launch('tel:${phone.replaceAll(RegExp(r'[^0-9+]'), '')}'));
+              add(Icons.language_rounded, 'WEBSITE', website,
+                  onTap: () => _launch(website));
+
+              if (rows.isEmpty) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(top: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                decoration: BoxDecoration(
+                  color: kCard,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: kCardBorder),
+                ),
+                child: Column(children: rows),
+              );
+            }),
+            if (tags.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: tags
+                    .split(',')
+                    .map((t) => t.trim())
+                    .where((t) => t.isNotEmpty)
+                    .map((t) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: kMintLight,
+                              borderRadius: BorderRadius.circular(20)),
+                          child: Text('#$t',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: kMint)),
+                        ))
+                    .toList(),
+              ),
+            ],
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(14),
@@ -275,11 +354,46 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                 border: Border.all(color: kCardBorder),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('AI Analysis',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12, fontWeight: FontWeight.w700, color: kMint)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('AI Audio Guide · ${r.category}',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12, fontWeight: FontWeight.w700, color: kMint)),
+                    ),
+                    GestureDetector(
+                      onTap: () => _toggleTts(r.description),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: _isSpeaking
+                            ? Container(
+                                key: const ValueKey('stop'),
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.stop_rounded,
+                                    size: 18, color: Colors.redAccent),
+                              )
+                            : Container(
+                                key: const ValueKey('play'),
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: kMint.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.play_arrow_rounded,
+                                    size: 18, color: kMint),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                Text(_placeResult!.description,
+                Text(r.description,
                     style: GoogleFonts.plusJakartaSans(
                         fontSize: 13, color: kInk, height: 1.55)),
               ]),
@@ -307,8 +421,82 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
     return const Center(child: CircularProgressIndicator(color: kMint));
   }
 
+  Future<void> _launch(String url) async {
+    var u = url.trim();
+    if (u.isEmpty) return;
+    if (!u.startsWith('tel:') &&
+        !u.startsWith('http://') &&
+        !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null) return;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open $url',
+              style: GoogleFonts.plusJakartaSans(fontSize: 13)),
+        ),
+      );
+    }
+  }
+
+  Widget _buildEmptyPrompt() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 0, 28, 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: kMintLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.center_focus_strong_rounded,
+                  size: 30, color: kMint),
+            ),
+            const SizedBox(height: 16),
+            Text('Point at a Seoul landmark',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16, fontWeight: FontWeight.w800, color: kInk)),
+            const SizedBox(height: 6),
+            Text(
+              'Take a photo or pick one from your gallery, and Seoul Lens '
+              'will identify it with opening hours and more.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, color: kSubtext, height: 1.5),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _showMediaPicker,
+              icon: const Icon(Icons.camera_alt_rounded, size: 18),
+              label: const Text('Scan a Place'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kMint,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(50)),
+                textStyle: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _tts.stop();
     _scanCtrl.dispose();
     super.dispose();
   }
@@ -323,9 +511,9 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
         children: [
           // Camera background — DDP-inspired gradient or picked image
           Positioned.fill(
-            child: _pickedImage != null
-                ? Image.file(
-                    File(_pickedImage!.path),
+            child: _pickedBytes != null
+                ? Image.memory(
+                    _pickedBytes!,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _DDPBackground(),
                   )
@@ -396,27 +584,29 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
               ),
             ),
           ),
-          // AR detected label
-          Positioned(
-            top: MediaQuery.of(context).size.height * 0.38,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(20),
+          // AR detected label — only once a real result comes back
+          if (_placeResult != null)
+            Positioned(
+              top: MediaQuery.of(context).size.height * 0.38,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                      '${_placeResult!.nameEnglish} · ${_placeResult!.confidence}% confidence',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white)),
                 ),
-                child: Text('DDP Detected · 98% confidence',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white)),
               ),
             ),
-          ),
           // Glassmorphism bottom sheet
           Positioned(
             bottom: 0,
@@ -457,286 +647,9 @@ class _SeoulLensScreenState extends State<SeoulLensScreen>
                     Expanded(
                       child: _pickedImage != null
                           ? _buildGeminiResult()
-                          : SingleChildScrollView(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                            // Location info (기본 DDP 더미)
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Dongdaemun Design Plaza',
-                                        style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w800,
-                                            color: kInk),
-                                      ),
-                                      Text('DDP · Dongdaemun-gu, Seoul',
-                                          style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 12, color: kSubtext)),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: kMintLight,
-                                    borderRadius: BorderRadius.circular(50),
-                                  ),
-                                  child: Row(children: [
-                                    const Icon(Icons.star_rounded,
-                                        size: 13, color: kMint),
-                                    const SizedBox(width: 3),
-                                    Text('4.8',
-                                        style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: kMint)),
-                                  ]),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            // Info chips row
-                            const Wrap(spacing: 8, runSpacing: 6, children: [
-                              _InfoChip(
-                                  Icons.access_time_rounded,
-                                  '10:00 AM – 10:00 PM',
-                                  kMintLight,
-                                  kMint),
-                              _InfoChip(
-                                  Icons.directions_subway_rounded,
-                                  'DDP Station (Line 2/4/5)',
-                                  kCanvas,
-                                  kSubtext),
-                              _InfoChip(
-                                  Icons.location_on_rounded,
-                                  '281 Eulji-ro, Seoul',
-                                  kCanvas,
-                                  kSubtext),
-                            ]),
-                            const SizedBox(height: 14),
-                            // Gemini docent text
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: kCanvas,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: kCardBorder),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: kMintLight,
-                                        borderRadius:
-                                            BorderRadius.circular(20),
-                                      ),
-                                      child: Row(children: [
-                                        const Icon(
-                                            Icons.auto_awesome_rounded,
-                                            size: 11,
-                                            color: kMint),
-                                        const SizedBox(width: 4),
-                                        Text('Gemini Docent',
-                                            style:
-                                                GoogleFonts.plusJakartaSans(
-                                                    fontSize: 10,
-                                                    fontWeight:
-                                                        FontWeight.w700,
-                                                    color: kMint)),
-                                      ]),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 7, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: kYellowLight,
-                                        borderRadius:
-                                            BorderRadius.circular(20),
-                                      ),
-                                      child: Text('CC',
-                                          style:
-                                              GoogleFonts.plusJakartaSans(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: const Color(
-                                                      0xFFD97706))),
-                                    ),
-                                  ]),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Designed by the legendary architect Zaha Hadid, the DDP opened in 2014 as one of the world\'s largest asymmetric buildings. Its futuristic curves house cutting-edge exhibitions, fashion shows, and design events, making it a symbol of Seoul\'s creative evolution...',
-                                    style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 12,
-                                        color: kInk,
-                                        height: 1.55),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            // Audio player
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: kCard,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: kCardBorder),
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: kMint.withValues(alpha: 0.06),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 4))
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                          Icons.library_music_rounded,
-                                          size: 16,
-                                          color: kMint),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'DDP Audio Guide — English',
-                                          style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              color: kInk),
-                                        ),
-                                      ),
-                                      Text('3:42',
-                                          style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 11,
-                                              color: kSubtext)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  // Scrubber
-                                  SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      activeTrackColor: kMint,
-                                      inactiveTrackColor: kMintLight,
-                                      thumbColor: kMint,
-                                      thumbShape: const RoundSliderThumbShape(
-                                          enabledThumbRadius: 6),
-                                      trackHeight: 3,
-                                      overlayShape:
-                                          const RoundSliderOverlayShape(
-                                              overlayRadius: 12),
-                                    ),
-                                    child: Slider(
-                                      value: _playProgress,
-                                      onChanged: (v) =>
-                                          setState(() => _playProgress = v),
-                                      min: 0,
-                                      max: 1,
-                                    ),
-                                  ),
-                                  Row(
-                                    children: [
-                                      Text('1:11',
-                                          style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 10,
-                                              color: kSubtext)),
-                                      const Spacer(),
-                                      Text('-2:31',
-                                          style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 10,
-                                              color: kSubtext)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(
-                                            Icons.replay_10_rounded,
-                                            color: kSubtext,
-                                            size: 24),
-                                        onPressed: () {},
-                                      ),
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        onTap: () => setState(
-                                            () => _isPlaying = !_isPlaying),
-                                        child: Container(
-                                          width: 52,
-                                          height: 52,
-                                          decoration: const BoxDecoration(
-                                              color: kMint,
-                                              shape: BoxShape.circle),
-                                          child: Icon(
-                                            _isPlaying
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                            color: Colors.white,
-                                            size: 28,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(
-                                            Icons.forward_10_rounded,
-                                            color: kSubtext,
-                                            size: 24),
-                                        onPressed: () {},
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: () =>
-                                    setState(() => _isPlaying = true),
-                                icon: const Icon(
-                                    Icons.headphones_rounded,
-                                    size: 18),
-                                label: const Text('Start Full Audio Guide'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: kMint,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(50)),
-                                  elevation: 0,
-                                  textStyle: GoogleFonts.plusJakartaSans(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15),
-                                ),
-                              ),
-                                ),
-                                ],
-                              ),
-                            ),
+                          : _buildEmptyPrompt(),
                     ),
-                    const AppBottomNav(currentIndex: 2),
+                                        const AppBottomNav(currentIndex: 2),
                   ],
                 ),
               ),
@@ -915,29 +828,77 @@ class _ScanFramePainter extends CustomPainter {
       old.scanProgress != scanProgress;
 }
 
-class _InfoChip extends StatelessWidget {
+/// A single full-width row in the landmark detail card. The value wraps to as
+/// many lines as it needs (so subway directions never get clipped). When
+/// [onTap] is set the row becomes a link (phone / website).
+class _DetailRow extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color bgColor;
-  final Color color;
-  const _InfoChip(this.icon, this.label, this.bgColor, this.color);
+  final String value;
+  final VoidCallback? onTap;
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kCardBorder),
+    final isLink = onTap != null;
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: kMintLight,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 16, color: kMint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: kSubtext,
+                        letterSpacing: 0.5)),
+                const SizedBox(height: 3),
+                Text(value,
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: isLink ? kMint : kInk,
+                        fontWeight:
+                            isLink ? FontWeight.w700 : FontWeight.w500,
+                        decoration:
+                            isLink ? TextDecoration.underline : null,
+                        decorationColor: kMint)),
+              ],
+            ),
+          ),
+          if (isLink)
+            const Padding(
+              padding: EdgeInsets.only(left: 8, top: 2),
+              child: Icon(Icons.open_in_new_rounded, size: 15, color: kMint),
+            ),
+        ],
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 5),
-        Text(label,
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 11, fontWeight: FontWeight.w500, color: kInk)),
-      ]),
+    );
+
+    if (!isLink) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: row,
     );
   }
 }
